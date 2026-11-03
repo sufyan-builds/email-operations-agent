@@ -86,6 +86,11 @@ export const buildInstruction = (runId: string, action: ActionType) => `RUN:${ru
 export class PlannerLLM implements LLMProvider {
   private readonly seenRuns = new Set<string>();
 
+  /** Forget a finished run (prevents the set from growing forever). */
+  forget(runId: string): void {
+    this.seenRuns.delete(runId);
+  }
+
   async chat(request: LLMChatRequest): Promise<LLMChatResponse> {
     const userText = [...request.messages].reverse().find((m) => m.role === 'user')?.content ?? '';
     const match = /^RUN:([A-Za-z0-9_-]+) ACTION:([a-z_]+)$/.exec(userText.trim());

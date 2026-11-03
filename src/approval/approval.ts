@@ -18,6 +18,8 @@ export interface ApprovalRequest {
 
 export interface ApprovalProvider {
   request(req: ApprovalRequest): Promise<'approved' | 'rejected'>;
+  /** Who is answering, for messages and audit text (e.g. "human reviewer", "static demo provider"). */
+  readonly reviewerLabel?: string;
 }
 
 /** Normalizes any provider outcome into a safe boolean. */
@@ -26,21 +28,29 @@ export async function askForApproval(
   req: ApprovalRequest,
   timeoutMs = 120_000,
 ): Promise<{ status: 'approved' | 'rejected' | 'invalid'; note: string }> {
+  let timer: NodeJS.Timeout | undefined;
   try {
     const answer = await Promise.race([
       provider.request(req),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('approval timed out')), timeoutMs).unref()),
+      new Promise<never>((_, rej) => {
+        timer = setTimeout(() => rej(new Error('approval timed out')), timeoutMs);
+        timer.unref();
+      }),
     ]);
-    if (answer === 'approved') return { status: 'approved', note: 'Approved by human reviewer.' };
-    if (answer === 'rejected') return { status: 'rejected', note: 'Rejected by human reviewer.' };
+    const who = provider.reviewerLabel ?? 'approval provider';
+    if (answer === 'approved') return { status: 'approved', note: `Approved by ${who}.` };
+    if (answer === 'rejected') return { status: 'rejected', note: `Rejected by ${who}.` };
     return { status: 'invalid', note: `Unexpected approval response: ${String(answer)}` };
   } catch (e) {
     return { status: 'invalid', note: `Approval failed: ${(e as Error).message}` };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
 /** Interactive prompt for the CLI. */
 export class CliApprovalProvider implements ApprovalProvider {
+  readonly reviewerLabel = 'human reviewer';
   async request(req: ApprovalRequest): Promise<'approved' | 'rejected'> {
     const rl = readline.createInterface({ input, output });
     try {
@@ -59,6 +69,8 @@ export class CliApprovalProvider implements ApprovalProvider {
 
 /** Non-interactive providers for tests and `--auto` demos. */
 export class StaticApprovalProvider implements ApprovalProvider {
+  /** A fixed, pre-programmed answer: this is NOT a human review. */
+  readonly reviewerLabel = 'static demo provider';
   calls = 0;
   constructor(private readonly answer: 'approved' | 'rejected') {}
   async request(): Promise<'approved' | 'rejected'> {

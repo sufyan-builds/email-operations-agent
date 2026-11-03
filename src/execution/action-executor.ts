@@ -48,6 +48,14 @@ export class ActionExecutor {
     return this.ledger.get(runId)?.result;
   }
 
+  /**
+   * Drops a finished run from the ledger so it cannot grow without bound.
+   * After release the runId has no authorization, so any later execute() is refused.
+   */
+  release(runId: string): void {
+    this.ledger.delete(runId);
+  }
+
   /** The text that would be sent if approved (used for the approval preview). */
   getDraftText(runId: string): string | undefined {
     return this.ledger.get(runId)?.draftText;

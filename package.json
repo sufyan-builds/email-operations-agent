@@ -4,7 +4,24 @@
   "description": "HazelJS Agent OS email operations agent: classify, extract intent, policy-gate, approve, simulate.",
   "private": true,
   "license": "MIT",
+  "author": "Muhammad Sufyan",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sufyan-builds/email-operations-agent.git"
+  },
+  "keywords": [
+    "hazeljs",
+    "ai-agent",
+    "email",
+    "human-in-the-loop",
+    "policy-gate",
+    "prompt-injection",
+    "typescript"
+  ],
   "main": "dist/src/index.js",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc",
     "start": "tsx src/index.ts",

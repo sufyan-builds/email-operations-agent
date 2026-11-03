@@ -25,10 +25,10 @@ This project demonstrates a secure operational pattern:
 - **Intent & Entity Extraction:** Extracts sender requests, key details (order IDs, meeting times, days, durations), and urgency levels (`low`, `medium`, `high`).
 - **Validated Output Contract:** Output is strictly validated against a Zod schema (`TriageResultSchema`). Malformed or unexpected outputs fail safely to review.
 - **Deterministic Policy Gate:** Independent safety gate evaluates actions as `allow`, `require_approval`, or `block` with safe fallbacks (`flag_for_review`).
-- **Human-in-the-Loop (HITL) Approval:** Requiring explicit human approval (`y`/`n`) before any outward-facing action (`draft_reply`). Rejections prevent execution.
-- **Prompt Injection Defense:** Raw email text is never passed into the agent's prompt, and an independent scanner blocks adversarial instructions.
+- **Human-in-the-Loop (HITL) Approval:** Requiring explicit approval (`y`/`n`) before any outward-facing action (`draft_reply`). Rejections prevent execution. In the interactive CLI (`npm start`) a person answers the prompt; the `demo` / `demo:reject` modes use a static approval provider instead (see [Demo Approvals Are Not Human Review](#demo-approvals-are-not-human-review)).
+- **Prompt Injection Mitigation:** Raw email text is never passed into the agent's prompt, and an independent **heuristic** scanner flags known injection patterns. This is best-effort detection, **not a complete security boundary**.
 - **HazelJS Integration:** Utilizes `@Agent`, `@Tool({ requiresApproval })`, `AgentRuntime`, a custom `LLMProvider`, and HazelJS runtime approval events.
-- **Comprehensive Automated Testing:** 43 automated unit and end-to-end integration tests covering all critical safety scenarios.
+- **Comprehensive Automated Testing:** 92 automated unit and end-to-end integration tests (5 files) covering all critical safety scenarios.
 
 ---
 
@@ -59,7 +59,7 @@ flowchart TD
 | **Types & Schema** | [`src/types.ts`](src/types.ts) | Strict TypeScript interfaces and `TriageResultSchema` (Zod contract) |
 | **Injection Scanner** | [`src/policy/injection.ts`](src/policy/injection.ts) | Heuristic scanner detecting adversarial prompt-injection patterns |
 | **Policy Gate** | [`src/policy/policy-gate.ts`](src/policy/policy-gate.ts) | Pure deterministic policy evaluation (`allow`, `require_approval`, `block`) |
-| **Human Approval** | [`src/approval/approval.ts`](src/approval/approval.ts) | Interactive CLI and static approval providers with fail-safe defaults |
+| **Human Approval** | [`src/approval/approval.ts`](src/approval/approval.ts) | Interactive CLI provider (a person answers) and static provider (fixed answer for demos and tests), with fail-safe defaults |
 | **HazelJS Agent** | [`src/agent/email-ops-agent.ts`](src/agent/email-ops-agent.ts) | HazelJS `@Agent` definition, `@Tool` methods, and deterministic `PlannerLLM` |
 | **Action Executor** | [`src/execution/action-executor.ts`](src/execution/action-executor.ts) | Ledger-backed simulated execution; rejects unauthorized or unapproved operations |
 | **Workflow Pipeline** | [`src/pipeline/pipeline.ts`](src/pipeline/pipeline.ts) | Connects triage, policy, approval, and HazelJS runtime event handling |
@@ -78,7 +78,7 @@ flowchart TD
 ## Technology Stack
 
 - **Runtime:** Node.js (v20+ recommended, developed on v24)
-- **Language:** TypeScript 5.8+ (target: ES2022, module: NodeNext)
+- **Language:** TypeScript 7.x (`^7.0.2` in `package.json`, 7.0.2 installed; target: ES2022, module: NodeNext)
 - **Core Framework:** `@hazeljs/agent` (v2.0.13), `@hazeljs/core`, `@hazeljs/eval`, `@hazeljs/rag`
 - **Validation:** `zod` (v4.6.7)
 - **Testing:** `vitest` (v5.0.5)
@@ -91,6 +91,7 @@ flowchart TD
 ### Prerequisites
 - Node.js (version 20 or higher) and npm installed.
 - No database, Redis instance, or external API keys required.
+- **Environment configuration:** none. There is no `.env` file and no secrets; the app runs fully offline. It does not connect to Gmail, Outlook or any email provider.
 
 ### Installation
 
@@ -101,8 +102,8 @@ git clone https://github.com/sufyan-builds/email-operations-agent.git
 # Navigate to the project directory
 cd email-operations-agent
 
-# Install dependencies
-npm install
+# Install dependencies exactly as pinned in package-lock.json
+npm ci
 ```
 
 ---
@@ -112,11 +113,15 @@ npm install
 | Command | Purpose |
 |---|---|
 | `npm start` | Launch the **interactive CLI** menu with human-in-the-loop approval prompts |
-| `npm run demo` | Run all 8 sample emails in non-interactive demo mode (auto-**APPROVE**) |
-| `npm run demo:reject` | Run all 8 sample emails in non-interactive demo mode (auto-**REJECT**) |
-| `npm test` | Execute the automated test suite (43 tests across 3 files) |
+| `npm run demo` | Run all 8 sample emails in non-interactive demo mode (static provider answers **APPROVE** automatically; no human review) |
+| `npm run demo:reject` | Run all 8 sample emails in non-interactive demo mode (static provider answers **REJECT** automatically; no human review) |
+| `npm test` | Execute the automated test suite (92 tests across 5 files) |
 | `npm run typecheck` | Perform strict TypeScript type checking (`tsc --noEmit`) |
 | `npm run build` | Compile the TypeScript project to JavaScript in the `dist/` folder |
+
+### Demo Approvals Are Not Human Review
+
+`npm run demo` and `npm run demo:reject` use `StaticApprovalProvider`, which returns a fixed, pre-programmed answer (`approved` or `rejected`). These answers do **not** represent actual human review; they exist so the full approval path can be demonstrated and tested without interaction. In those modes the report says "Approved by static demo provider" or "Rejected by static demo provider". Only the interactive CLI (`npm start`) asks a person, and its messages say "human reviewer".
 
 ---
 
@@ -200,6 +205,8 @@ The automated test suite (`npm test`) verifies all challenge requirements:
 | **8** | Rejected action is never executed | [`tests/executor.test.ts`](tests/executor.test.ts), [`tests/pipeline.test.ts`](tests/pipeline.test.ts) |
 | **9** | Malformed triage output or engine exceptions fail safely | [`tests/pipeline.test.ts`](tests/pipeline.test.ts), [`tests/policy.test.ts`](tests/policy.test.ts) |
 | **10** | End-to-end execution path verified across all sample scenarios | [`tests/pipeline.test.ts`](tests/pipeline.test.ts) |
+| **+** | Hardening: obfuscated injection, approval timeout, payload integrity, planner strictness, run cleanup, extra classification cases | [`tests/hardening.test.ts`](tests/hardening.test.ts) |
+| **+** | Approval timeout bounds, approval-event parsing / preview action, policy-vs-`@Tool` approval consistency | [`tests/approval-hardening.test.ts`](tests/approval-hardening.test.ts) |
 
 ---
 
@@ -208,7 +215,23 @@ The automated test suite (`npm test`) verifies all challenge requirements:
 - **Separation of Concerns:** The triage classifier only suggests an action. The policy gate deterministically decides whether an action is permitted.
 - **Defense in Depth:** Even if the agent were to invoke a tool unexpectedly, `ActionExecutor` checks an internal authorization ledger before performing any simulated mutation.
 - **Fail-Safe Defaults:** If validation fails, confidence is low (< 0.60), or an exception occurs, the system defaults to `block` and falls back to `flag_for_review`.
-- **Replay Protection:** Authorization tokens in `ActionExecutor` are consumed upon use and cannot be executed twice.
+- **Replay Protection:** Authorization tokens in `ActionExecutor` are consumed upon use and cannot be executed twice. Finished runs are also released from the ledger, so a stale `runId` has no authorization at all.
+- **Payload Integrity:** Tool arguments carry only a `runId`. Recipient, draft text and label are read from the ledger, so tool arguments cannot override authorized data.
+- **Approval Fail-Closed:** Only the exact answer `approved` counts. Rejections, junk answers, thrown errors and timeouts (timer is cleared afterwards) all prevent execution, and an error in the approval handler rejects the pending request. The approval timeout defaults to 120 s; invalid values (non-numeric, zero, negative, `NaN`, `Infinity`) fall back to the default, and larger values are capped at 295 s so the pipeline's own timeout always fires before the HazelJS runtime's 300 s approval expiry.
+- **Approval Event Validation:** The approval prompt shows the action taken from the HazelJS approval event's tool name. A missing or malformed event, or an unknown tool name, is rejected.
+- **Single Approval Definition Check:** A test asserts that `ACTION_RULES.requiresApproval` (policy gate) and `@Tool({ requiresApproval })` (agent) agree for every action, so changing one without the other fails the test suite.
+- **Prompt Isolation:** The agent only receives `RUN:<id> ACTION:<action>`; email text never reaches the planner.
+- **Injection Scanner Normalization:** Text is Unicode-NFKC-normalized and zero-width characters are stripped before pattern matching. This is still a **heuristic**: look-alike letters from other scripts (e.g. Cyrillic `а`), character-spacing tricks and novel phrasing can evade it. It is one layer, not a guarantee; the policy gate, approval step and executor checks are the primary controls.
+
+---
+
+## HazelJS Capabilities Evaluated
+
+| Capability | Status |
+|---|---|
+| `@hazeljs/agent` (`@Agent`, `@Tool`, `AgentRuntime`, `LLMProvider`, `TOOL_APPROVAL_REQUESTED`, `approveToolExecution` / `rejectToolExecution`) | **Used** |
+| `@hazeljs/core`, `@hazeljs/rag`, `@hazeljs/eval` | Declared as peer dependencies of `@hazeljs/agent@2.0.13` and installed here for that reason; the project's own code does not import them. `@hazeljs/core` and `@hazeljs/eval` are loaded by the agent package at runtime (removing `@hazeljs/eval` breaks the agent import, even though its package metadata marks it optional). `@hazeljs/rag` is a required peer dependency, but no reference to it was found in the agent package's compiled JavaScript, so it is not described as a runtime requirement; it is installed only to satisfy the peer dependency. |
+| `@hazeljs/agent-gatekeeper`, `@hazeljs/memory`, `@hazeljs/observability`, durable execution, `@hazeljs/agent-vm`, Skillgate, `@hazeljs/testing` | **Not used.** The project already has its own deterministic policy gate and in-memory approvals; adding these would add dependencies without solving a current requirement. Candidates for future work (durable approvals, audit trail, tracing) |
 
 ---
 
@@ -225,10 +248,11 @@ The automated test suite (`npm test`) verifies all challenge requirements:
 
 Running `npm audit` currently reports **3 high-severity findings** stemming from advisory [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) (*Zod can exhaust memory while validating oversized constrained collections*), which affects Zod versions `< 4.6.6`.
 
-- **Root Cause:** `@hazeljs/agent@2.0.13` and `@hazeljs/eval@2.0.13` specify nested dependencies on `zod@^3.25.76`. Because Zod 3 has no patched release for this advisory, these nested dependencies trigger the audit warning.
-- **Project Direct Dependency:** The project's direct `zod` dependency is `4.6.7`, which is already patched.
-- **Do NOT Run `npm audit fix --force`:** The automated npm audit fix suggests downgrading `@hazeljs/agent` to `0.3.0`—a major breaking downgrade that breaks Agent OS decorators and runtime APIs.
-- **Risk Assessment:** Because this application runs locally without external network exposure and processes pre-validated email objects, exposure is significantly reduced. However, this does not eliminate the advisory, and the project is not claimed to be vulnerability-free. We recommend tracking future HazelJS releases that adopt Zod 4+.
+- **Root Cause:** `@hazeljs/agent@2.0.13` and `@hazeljs/eval@2.0.13` each bring their own nested `zod@3.25.76` (their declared range is `^3.25.76`). `npm audit` reports both nested copies as affected by the advisory (affected range `< 4.6.6`): `node_modules/@hazeljs/agent/node_modules/zod` and `node_modules/@hazeljs/eval/node_modules/zod`. `npm audit` counts three findings (`zod`, `@hazeljs/eval`, `@hazeljs/agent`) because the two HazelJS packages are flagged for depending on the vulnerable Zod.
+- **Project Direct Dependency:** The project's own direct `zod` dependency is `4.6.7`, which is outside the advisory's affected range. The vulnerable copies are only the nested Zod 3 copies pulled in by HazelJS packages.
+- **No Upgrade Applied:** No compatible upgrade has been applied. This is a known upstream dependency risk that remains unresolved. This project did not check whether a patched Zod 3.x release exists, and does not make any claim either way.
+- **Do NOT Run `npm audit fix --force`:** `npm audit` offers only `@hazeljs/agent@0.3.0` as a fix, which is a major breaking downgrade of the HazelJS framework, so it was not applied.
+- **Risk Assessment:** This application runs locally, has no network listener, and validates only the application's own small triage objects. That reduces practical exposure, but it does not remove the advisory. The project is **not** claimed to be free of vulnerabilities. Track future HazelJS releases that depend on a patched Zod.
 
 ---
 
