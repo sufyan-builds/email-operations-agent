@@ -1,0 +1,30 @@
+{
+  "name": "email-operations-agent",
+  "version": "1.0.0",
+  "description": "HazelJS Agent OS email operations agent: classify, extract intent, policy-gate, approve, simulate.",
+  "private": true,
+  "license": "MIT",
+  "main": "dist/src/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsx src/index.ts",
+    "demo": "tsx src/index.ts --approve",
+    "demo:reject": "tsx src/index.ts --reject",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hazeljs/agent": "^2.0.13",
+    "@hazeljs/core": "^2.0.13",
+    "@hazeljs/eval": "^2.0.13",
+    "@hazeljs/rag": "^2.0.13",
+    "reflect-metadata": "^0.2.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
