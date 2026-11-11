@@ -11,6 +11,7 @@
   },
   "keywords": [
     "hazeljs",
+    "autonomous",
     "ai-agent",
     "email",
     "human-in-the-loop",
@@ -27,14 +28,17 @@
     "start": "tsx src/index.ts",
     "demo": "tsx src/index.ts --approve",
     "demo:reject": "tsx src/index.ts --reject",
+    "demo:autonomous": "tsx src/autonomous/demo-autonomous.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
-    "@hazeljs/agent": "^2.0.13",
-    "@hazeljs/core": "^2.0.13",
-    "@hazeljs/eval": "^2.0.13",
-    "@hazeljs/rag": "^2.0.13",
+    "@hazeljs/agent": "^2.0.16",
+    "@hazeljs/agent-gatekeeper": "^2.0.16",
+    "@hazeljs/autonomous": "^2.0.16",
+    "@hazeljs/core": "^2.0.16",
+    "@hazeljs/eval": "^2.0.16",
+    "@hazeljs/rag": "^2.0.16",
     "reflect-metadata": "^0.2.2",
     "zod": "^4.6.7"
   },

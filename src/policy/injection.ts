@@ -13,6 +13,10 @@ const INJECTION_PATTERNS: Array<{ name: string; re: RegExp }> = [
   { name: 'role-hijack', re: /\byou\s+are\s+now\b|\badmin\s+mode\b|\bdeveloper\s+mode\b|\bjailbreak\b/i },
   { name: 'prompt-leak', re: /\b(reveal|show|print|leak)\b[^.\n]{0,30}\b(system\s+prompt|instructions|api\s*key|secrets?)\b/i },
   { name: 'fake-system-tag', re: /\[\s*(system|assistant|admin)\s*\]|<\s*\/?\s*(system|instructions?)\s*>/i },
+  {
+    name: 'fake-reviewer-approval',
+    re: /\[\s*(human\s+)?(reviewer|approver)\s*\]|<\s*\/?\s*(reviewer|approval)\s*>|\bhuman\s+reviewer\s*[:=-]\s*(approved|yes)\b|\bi\s+am\s+the\s+(human\s+)?(reviewer|approver)\b|\bi\s+approve\s+this\s+(action|tool(\s+call|\s+execution)?|draft_reply|execution)\b/i,
+  },
   { name: 'mass-exfiltration', re: /\b(send|forward)\b[^.\n]{0,60}\b(everyone|all\s+contacts|address\s+book|customer\s+database)\b/i },
 ];
 

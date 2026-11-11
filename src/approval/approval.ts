@@ -8,6 +8,7 @@
 import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { ActionType, Email } from '../types';
+import { sanitizeTerminalMultiline, sanitizeTerminalText } from '../ui/format';
 
 export interface ApprovalRequest {
   email: Email;
@@ -56,9 +57,11 @@ export class CliApprovalProvider implements ApprovalProvider {
     try {
       console.log('\n  --- APPROVAL REQUIRED ---');
       console.log(`  Action : ${req.action}   (simulated - nothing is really sent)`);
-      console.log(`  To     : ${req.email.from}`);
+      // Sanitize untrusted sender, subject, and preview lines so control/escape/bidi sequences cannot spoof terminal prompts.
+      console.log(`  To     : ${sanitizeTerminalText(req.email.from)}`);
+      console.log(`  Subject: ${sanitizeTerminalText(req.email.subject)}`);
       console.log('  Preview:');
-      for (const line of req.preview.split('\n')) console.log(`    | ${line}`);
+      for (const line of sanitizeTerminalMultiline(req.preview)) console.log(`    | ${line}`);
       const a = (await rl.question('\n  Approve this action? (y/N): ')).trim().toLowerCase();
       return a === 'y' || a === 'yes' ? 'approved' : 'rejected';
     } finally {

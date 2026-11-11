@@ -27,8 +27,9 @@ This project demonstrates a secure operational pattern:
 - **Deterministic Policy Gate:** Independent safety gate evaluates actions as `allow`, `require_approval`, or `block` with safe fallbacks (`flag_for_review`).
 - **Human-in-the-Loop (HITL) Approval:** Requiring explicit approval (`y`/`n`) before any outward-facing action (`draft_reply`). Rejections prevent execution. In the interactive CLI (`npm start`) a person answers the prompt; the `demo` / `demo:reject` modes use a static approval provider instead (see [Demo Approvals Are Not Human Review](#demo-approvals-are-not-human-review)).
 - **Prompt Injection Mitigation:** Raw email text is never passed into the agent's prompt, and an independent **heuristic** scanner flags known injection patterns. This is best-effort detection, **not a complete security boundary**.
-- **HazelJS Integration:** Utilizes `@Agent`, `@Tool({ requiresApproval })`, `AgentRuntime`, a custom `LLMProvider`, and HazelJS runtime approval events.
-- **Comprehensive Automated Testing:** 92 automated unit and end-to-end integration tests (5 files) covering all critical safety scenarios.
+- **HazelJS Agent OS Integration:** Utilizes `@Agent`, `@Tool({ requiresApproval })`, `AgentRuntime`, a custom `LLMProvider`, and HazelJS runtime approval events.
+- **HazelJS Autonomous Application Runtime (AAR) Demo:** Includes a side-by-side demonstration using `@Autonomous`, `@Observe`, `@Capability`, `AutonomousRuntime`, `mode: 'approval-required'`, `simulation: true` hard safety barrier, and inspectable run history/timelines (`npm run demo:autonomous`).
+- **Comprehensive Automated Testing:** 127 automated unit and end-to-end integration tests (6 files) covering all critical safety scenarios.
 
 ---
 
@@ -63,6 +64,7 @@ flowchart TD
 | **HazelJS Agent** | [`src/agent/email-ops-agent.ts`](src/agent/email-ops-agent.ts) | HazelJS `@Agent` definition, `@Tool` methods, and deterministic `PlannerLLM` |
 | **Action Executor** | [`src/execution/action-executor.ts`](src/execution/action-executor.ts) | Ledger-backed simulated execution; rejects unauthorized or unapproved operations |
 | **Workflow Pipeline** | [`src/pipeline/pipeline.ts`](src/pipeline/pipeline.ts) | Connects triage, policy, approval, and HazelJS runtime event handling |
+| **Autonomous Runtime (AAR)** | [`src/autonomous/email-autonomous.ts`](src/autonomous/email-autonomous.ts), [`src/autonomous/demo-autonomous.ts`](src/autonomous/demo-autonomous.ts) | Governed `@Autonomous` service with `@Observe`, `@Capability`, `AutonomousRuntime` (`simulation: true`), and run timelines |
 | **CLI & Formatting** | [`src/index.ts`](src/index.ts), [`src/ui/format.ts`](src/ui/format.ts) | User interface, interactive menu, and structured console reporting |
 
 ---
@@ -72,6 +74,24 @@ flowchart TD
 1. **Agent & Tools:** `EmailOpsAgent` is decorated with `@Agent`. Its operations (`draft_reply`, `flag_for_review`, `categorize`, `no_action`) are decorated with `@Tool`. Outward-facing tools specify `requiresApproval: true`.
 2. **Runtime Event Handling:** The `AgentRuntime` intercepts tools requiring approval and emits `AgentEventType.TOOL_APPROVAL_REQUESTED`. The pipeline triggers the human approval prompt and calls `approveToolExecution()` or `rejectToolExecution()`.
 3. **Deterministic LLM Planner:** To ensure 100% offline reproducibility and eliminate external API dependencies, `PlannerLLM` implements the HazelJS `LLMProvider` interface. It translates structured pipeline instructions (`RUN:<id> ACTION:<action>`) directly into the corresponding tool call without exposing raw email text to model generation.
+4. **Autonomous Application Runtime (AAR):** Alongside the `AgentRuntime` workflow, `AutonomousEmailService` ([`src/autonomous/email-autonomous.ts`](src/autonomous/email-autonomous.ts)) demonstrates HazelJS's newest **Autonomous Application Runtime** (`@hazeljs/autonomous`):
+   - `@Autonomous({ mode: 'approval-required', capabilities: ['email.draft_reply', 'email.flag_for_review'] })` declares a governed service.
+   - `@Observe('email.received')` listens for incoming email events and runs the existing triage engine and deterministic policy gate.
+   - `@Capability({ id: 'email.draft_reply', effect: 'irreversible', approval: 'required' })` and `@Capability({ id: 'email.flag_for_review', effect: 'idempotent', approval: 'auto' })` define governed actions.
+   - `AutonomousRuntime` runs with `simulation: true` (HazelJS's built-in hard barrier against live side effects), pauses at `waiting_for_human` (`approval_pending`), resumes via `runtime.resume(runId, { approved, actor })`, and records every step in `MemoryAutonomousRunStore` (`runtime.listRuns()` and `runtime.timeline(runId)`).
+
+### AAR Workflow Diagram
+
+```mermaid
+flowchart LR
+    E[Emit email.received] --> O["@Observe Handler<br/>Triage + Policy Gate"]
+    O --> D[Decision Engine<br/>Propose Capability]
+    D --> P["Paused: waiting_for_human<br/>(phase: approval_pending)"]
+    P -- "resume(approved: true)" --> S["Simulation Barrier (simulation: true)<br/>Records capability.simulated"]
+    P -- "resume(approved: false)" --> C["Cancelled<br/>(phase: cancelled)"]
+    S --> H[Run History & Timeline]
+    C --> H
+```
 
 ---
 
@@ -79,7 +99,7 @@ flowchart TD
 
 - **Runtime:** Node.js (v20+ recommended, developed on v24)
 - **Language:** TypeScript 7.x (`^7.0.2` in `package.json`, 7.0.2 installed; target: ES2022, module: NodeNext)
-- **Core Framework:** `@hazeljs/agent` (v2.0.13), `@hazeljs/core`, `@hazeljs/eval`, `@hazeljs/rag`
+- **Core Framework:** `@hazeljs/agent` (v2.0.16), `@hazeljs/autonomous` (v2.0.16), `@hazeljs/agent-gatekeeper` (v2.0.16), `@hazeljs/core` (v2.0.16), `@hazeljs/eval` (v2.0.16), `@hazeljs/rag` (v2.0.16)
 - **Validation:** `zod` (v4.6.7)
 - **Testing:** `vitest` (v5.0.5)
 - **Runner:** `tsx`
@@ -115,7 +135,8 @@ npm ci
 | `npm start` | Launch the **interactive CLI** menu with human-in-the-loop approval prompts |
 | `npm run demo` | Run all 8 sample emails in non-interactive demo mode (static provider answers **APPROVE** automatically; no human review) |
 | `npm run demo:reject` | Run all 8 sample emails in non-interactive demo mode (static provider answers **REJECT** automatically; no human review) |
-| `npm test` | Execute the automated test suite (92 tests across 5 files) |
+| `npm run demo:autonomous` | Run the **HazelJS Autonomous Application Runtime (AAR)** demo (approval, rejection, policy-gate block, and run history/timeline) |
+| `npm test` | Execute the automated test suite (127 tests across 6 files) |
 | `npm run typecheck` | Perform strict TypeScript type checking (`tsc --noEmit`) |
 | `npm run build` | Compile the TypeScript project to JavaScript in the `dist/` folder |
 
@@ -149,6 +170,7 @@ Select: 1
   --- APPROVAL REQUIRED ---
   Action : draft_reply   (simulated - nothing is really sent)
   To     : priya.sharma@example.com
+  Subject: Question about your premium plan pricing
   Preview:
     | Hello,
     | 
@@ -189,6 +211,53 @@ SUBJECT Question about your premium plan pricing
 
 ---
 
+## Autonomous Application Runtime (AAR) Demo Walkthrough
+
+Running `npm run demo:autonomous` executes [`src/autonomous/demo-autonomous.ts`](src/autonomous/demo-autonomous.ts) and demonstrates three end-to-end AAR scenarios with `simulation: true` enabled (so the runtime's hard simulation barrier intercepts capability execution and no real email or side effect is ever performed):
+
+```text
+HazelJS Autonomous Application Runtime (AAR) — Email Operations Demo
+Safety Barrier: simulation=true (no real emails or live side effects can execute)
+
+========================================================================
+AAR SCENARIO: 1. Inquiry Email — Human APPROVES Reply
+EMAIL         [inquiry-1] From: priya.sharma@example.com | Subject: Question about your premium plan pricing
+------------------------------------------------------------------------
+Run ID:                 aar_58cdd6ee-3475-400e-ae6c-34000fc5b302
+Service ID:             email-operations-autonomous
+Autonomous Mode:        approval-required
+Simulation Barrier:     ENABLED (simulation: true)
+Proposed Capability:    email.draft_reply
+Decision Reason:        "draft_reply" could produce an outward-facing side effect; human approval required.
+Status Before Approval: waiting_for_human (phase: approval_pending)
+Status After Resume:    completed (phase: completed)
+Simulated Output:       {"simulated":true,"capabilityId":"email.draft_reply","arguments":{"emailId":"inquiry-1","to":"priya.sharma@example.com","subject":"Re: Question about your premium plan pricing","body":"Hello,\n\nThank you for your interest. We will share the pricing and support details you asked about shortly. Please let us know if you have any other questions.\n\nBest regards,\nSupport Team","category":"customer_inquiry"}}
+Timeline:
+  - [decision.started]
+  - [approval.pending] — "draft_reply" could produce an outward-facing side effect; human approval required.
+  - [capability.simulated] — email.draft_reply
+  - [run.completed]
+
+========================================================================
+AAR SCENARIO: 2. Inquiry Email — Human REJECTS Reply
+EMAIL         [inquiry-1] From: priya.sharma@example.com | Subject: Question about your premium plan pricing
+------------------------------------------------------------------------
+Run ID:                 aar_067ea296-af8f-4151-be43-50b78381dc50
+Service ID:             email-operations-autonomous
+Autonomous Mode:        approval-required
+Simulation Barrier:     ENABLED (simulation: true)
+Proposed Capability:    email.draft_reply
+Decision Reason:        "draft_reply" could produce an outward-facing side effect; human approval required.
+Status Before Approval: waiting_for_human (phase: approval_pending)
+Status After Resume:    cancelled (phase: cancelled)
+Timeline:
+  - [decision.started]
+  - [approval.pending] — "draft_reply" could produce an outward-facing side effect; human approval required.
+  - [run.cancelled] — Rejected by human-reviewer
+```
+
+---
+
 ## Test Scenarios & Acceptance Criteria
 
 The automated test suite (`npm test`) verifies all challenge requirements:
@@ -207,6 +276,7 @@ The automated test suite (`npm test`) verifies all challenge requirements:
 | **10** | End-to-end execution path verified across all sample scenarios | [`tests/pipeline.test.ts`](tests/pipeline.test.ts) |
 | **+** | Hardening: obfuscated injection, approval timeout, payload integrity, planner strictness, run cleanup, extra classification cases | [`tests/hardening.test.ts`](tests/hardening.test.ts) |
 | **+** | Approval timeout bounds, approval-event parsing / preview action, policy-vs-`@Tool` approval consistency | [`tests/approval-hardening.test.ts`](tests/approval-hardening.test.ts) |
+| **+** | HazelJS Autonomous Application Runtime (AAR): `@Autonomous`, `@Observe`, `@Capability`, `approval-required`, `simulation: true` barrier, approval/rejection paths, policy-gate routing, and run history/timeline | [`tests/autonomous.test.ts`](tests/autonomous.test.ts) |
 
 ---
 
@@ -220,6 +290,7 @@ The automated test suite (`npm test`) verifies all challenge requirements:
 - **Approval Fail-Closed:** Only the exact answer `approved` counts. Rejections, junk answers, thrown errors and timeouts (timer is cleared afterwards) all prevent execution, and an error in the approval handler rejects the pending request. The approval timeout defaults to 120 s; invalid values (non-numeric, zero, negative, `NaN`, `Infinity`) fall back to the default, and larger values are capped at 295 s so the pipeline's own timeout always fires before the HazelJS runtime's 300 s approval expiry.
 - **Approval Event Validation:** The approval prompt shows the action taken from the HazelJS approval event's tool name. A missing or malformed event, or an unknown tool name, is rejected.
 - **Single Approval Definition Check:** A test asserts that `ACTION_RULES.requiresApproval` (policy gate) and `@Tool({ requiresApproval })` (agent) agree for every action, so changing one without the other fails the test suite.
+- **Out-of-Band Approval Channel Separation:** Approval decisions never come from the email stream (`from`, `subject`, or `body`) or from `TriageResultSchema` (which has no approval field). In the `AgentRuntime` pipeline, approval comes exclusively from `ApprovalProvider.request()` (e.g., local terminal `stdin`); in the `AutonomousRuntime` (AAR) pipeline, a paused `waiting_for_human` run can only be resumed by an explicit out-of-band `runtime.resume(runId, { approved, actor })` call. Even if an email body contains `"I approve this action"`, `"[HUMAN REVIEWER]: APPROVED"`, or `"Yes, proceed."`, it cannot approve itself.
 - **Prompt Isolation:** The agent only receives `RUN:<id> ACTION:<action>`; email text never reaches the planner.
 - **Injection Scanner Normalization:** Text is Unicode-NFKC-normalized and zero-width characters are stripped before pattern matching. This is still a **heuristic**: look-alike letters from other scripts (e.g. Cyrillic `а`), character-spacing tricks and novel phrasing can evade it. It is one layer, not a guarantee; the policy gate, approval step and executor checks are the primary controls.
 
@@ -229,9 +300,10 @@ The automated test suite (`npm test`) verifies all challenge requirements:
 
 | Capability | Status |
 |---|---|
-| `@hazeljs/agent` (`@Agent`, `@Tool`, `AgentRuntime`, `LLMProvider`, `TOOL_APPROVAL_REQUESTED`, `approveToolExecution` / `rejectToolExecution`) | **Used** |
-| `@hazeljs/core`, `@hazeljs/rag`, `@hazeljs/eval` | Declared as peer dependencies of `@hazeljs/agent@2.0.13` and installed here for that reason; the project's own code does not import them. `@hazeljs/core` and `@hazeljs/eval` are loaded by the agent package at runtime (removing `@hazeljs/eval` breaks the agent import, even though its package metadata marks it optional). `@hazeljs/rag` is a required peer dependency, but no reference to it was found in the agent package's compiled JavaScript, so it is not described as a runtime requirement; it is installed only to satisfy the peer dependency. |
-| `@hazeljs/agent-gatekeeper`, `@hazeljs/memory`, `@hazeljs/observability`, durable execution, `@hazeljs/agent-vm`, Skillgate, `@hazeljs/testing` | **Not used.** The project already has its own deterministic policy gate and in-memory approvals; adding these would add dependencies without solving a current requirement. Candidates for future work (durable approvals, audit trail, tracing) |
+| `@hazeljs/agent` (`@Agent`, `@Tool`, `AgentRuntime`, `LLMProvider`, `TOOL_APPROVAL_REQUESTED`, `approveToolExecution` / `rejectToolExecution`) | **Used** (core pipeline) |
+| `@hazeljs/autonomous` & `@hazeljs/agent-gatekeeper` (`@Autonomous`, `@Observe`, `@Capability`, `AutonomousRuntime`, `MemoryAutonomousRunStore`, `simulation: true`) | **Used** (AAR demonstration in `src/autonomous/`) |
+| `@hazeljs/core`, `@hazeljs/rag`, `@hazeljs/eval` | Declared as peer dependencies of `@hazeljs/agent@2.0.16` and installed here for that reason; `@hazeljs/core` and `@hazeljs/eval` are loaded by the agent package at runtime (removing `@hazeljs/eval` breaks the agent import, even though its package metadata marks it optional). `@hazeljs/rag` is a required peer dependency, but no reference to it was found in the agent package's compiled JavaScript, so it is not described as a runtime requirement; it is installed only to satisfy the peer dependency. |
+| `@hazeljs/memory`, `@hazeljs/observability`, durable SQL/Redis execution, `@hazeljs/agent-vm`, Skillgate, `@hazeljs/testing` | **Not used.** The project already has its own deterministic policy gate and in-memory stores; adding these would add dependencies without solving a current requirement. Candidates for future work (durable approvals, audit trail, tracing) |
 
 ---
 
@@ -246,13 +318,7 @@ The automated test suite (`npm test`) verifies all challenge requirements:
 
 ## Dependency Security Notice (`npm audit`)
 
-Running `npm audit` currently reports **3 high-severity findings** stemming from advisory [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) (*Zod can exhaust memory while validating oversized constrained collections*), which affects Zod versions `< 4.6.6`.
-
-- **Root Cause:** `@hazeljs/agent@2.0.13` and `@hazeljs/eval@2.0.13` each bring their own nested `zod@3.25.76` (their declared range is `^3.25.76`). `npm audit` reports both nested copies as affected by the advisory (affected range `< 4.6.6`): `node_modules/@hazeljs/agent/node_modules/zod` and `node_modules/@hazeljs/eval/node_modules/zod`. `npm audit` counts three findings (`zod`, `@hazeljs/eval`, `@hazeljs/agent`) because the two HazelJS packages are flagged for depending on the vulnerable Zod.
-- **Project Direct Dependency:** The project's own direct `zod` dependency is `4.6.7`, which is outside the advisory's affected range. The vulnerable copies are only the nested Zod 3 copies pulled in by HazelJS packages.
-- **No Upgrade Applied:** No compatible upgrade has been applied. This is a known upstream dependency risk that remains unresolved. This project did not check whether a patched Zod 3.x release exists, and does not make any claim either way.
-- **Do NOT Run `npm audit fix --force`:** `npm audit` offers only `@hazeljs/agent@0.3.0` as a fix, which is a major breaking downgrade of the HazelJS framework, so it was not applied.
-- **Risk Assessment:** This application runs locally, has no network listener, and validates only the application's own small triage objects. That reduces practical exposure, but it does not remove the advisory. The project is **not** claimed to be free of vulnerabilities. Track future HazelJS releases that depend on a patched Zod.
+With the upgrade to **HazelJS `2.0.16`** (`@hazeljs/agent@2.0.16`, `@hazeljs/autonomous@2.0.16`, `@hazeljs/agent-gatekeeper@2.0.16`, `@hazeljs/core@2.0.16`, `@hazeljs/eval@2.0.16`, `@hazeljs/rag@2.0.16`), all HazelJS packages now depend on `zod@^4.6.7` (deduped to `zod@4.6.7`), resolving the earlier nested `zod@3.25.76` advisory ([GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5)). Running `npm audit` now reports **0 vulnerabilities**.
 
 ---
 
