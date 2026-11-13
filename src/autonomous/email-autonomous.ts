@@ -8,7 +8,7 @@
  *   - `@Capability` governed methods (`email.draft_reply`, `email.flag_for_review`)
  *   - `AutonomousRuntime` with `simulation: true` hard safety barrier
  *   - Human-in-the-loop pause/resume (`waiting_for_human` -> `resume()`)
- *   - Durable in-memory run history (`listRuns()`) and audit timeline (`timeline()`)
+ *   - In-memory run history (`listRuns()`) and audit timeline (`timeline()`); not persisted across restarts
  */
 import 'reflect-metadata';
 import {
@@ -22,6 +22,7 @@ import {
   type AutonomousRunRecord,
 } from '@hazeljs/autonomous';
 import { evaluateAction, validateTriage } from '../policy/policy-gate';
+import { sanitizeTerminalText } from '../ui/format';
 import { RuleBasedTriage, type TriageEngine } from '../triage/triage';
 import type { ActionType, Email, PolicyDecision, TriageResult } from '../types';
 
@@ -117,11 +118,13 @@ export class AutonomousEmailService {
 
   /**
    * 3. CAPABILITY (Internal queue): Flag an email for human review when blocked by policy.
+   *    Marked `approval: 'required'` to match the decision engine, which always requests
+   *    human approval (`request-approval`) before this capability is recorded.
    */
   @Capability({
     id: CAPABILITY_FLAG_REVIEW,
     effect: 'idempotent',
-    approval: 'auto',
+    approval: 'required',
     idempotencyKey: true,
   })
   flagForReview(input: { emailId: string; from: string; subject: string; reasons: string[] }) {
@@ -258,7 +261,9 @@ export function formatAutonomousScenario(label: string, email: Email, result: Au
 
   lines.push('='.repeat(72));
   lines.push(`AAR SCENARIO: ${label}`);
-  lines.push(`EMAIL         [${email.id}] From: ${email.from} | Subject: ${email.subject}`);
+  lines.push(
+    `EMAIL         [${sanitizeTerminalText(email.id)}] From: ${sanitizeTerminalText(email.from)} | Subject: ${sanitizeTerminalText(email.subject)}`,
+  );
   lines.push('-'.repeat(72));
   lines.push(`Run ID:                 ${runId}`);
   lines.push(`Service ID:             ${afterResume.serviceId}`);

@@ -29,7 +29,7 @@ This project demonstrates a secure operational pattern:
 - **Prompt Injection Mitigation:** Raw email text is never passed into the agent's prompt, and an independent **heuristic** scanner flags known injection patterns. This is best-effort detection, **not a complete security boundary**.
 - **HazelJS Agent OS Integration:** Utilizes `@Agent`, `@Tool({ requiresApproval })`, `AgentRuntime`, a custom `LLMProvider`, and HazelJS runtime approval events.
 - **HazelJS Autonomous Application Runtime (AAR) Demo:** Includes a side-by-side demonstration using `@Autonomous`, `@Observe`, `@Capability`, `AutonomousRuntime`, `mode: 'approval-required'`, `simulation: true` hard safety barrier, and inspectable run history/timelines (`npm run demo:autonomous`).
-- **Comprehensive Automated Testing:** 127 automated unit and end-to-end integration tests (6 files) covering all critical safety scenarios.
+- **Comprehensive Automated Testing:** 129 automated unit and end-to-end integration tests (6 files) covering all critical safety scenarios.
 
 ---
 
@@ -77,8 +77,8 @@ flowchart TD
 4. **Autonomous Application Runtime (AAR):** Alongside the `AgentRuntime` workflow, `AutonomousEmailService` ([`src/autonomous/email-autonomous.ts`](src/autonomous/email-autonomous.ts)) demonstrates HazelJS's newest **Autonomous Application Runtime** (`@hazeljs/autonomous`):
    - `@Autonomous({ mode: 'approval-required', capabilities: ['email.draft_reply', 'email.flag_for_review'] })` declares a governed service.
    - `@Observe('email.received')` listens for incoming email events and runs the existing triage engine and deterministic policy gate.
-   - `@Capability({ id: 'email.draft_reply', effect: 'irreversible', approval: 'required' })` and `@Capability({ id: 'email.flag_for_review', effect: 'idempotent', approval: 'auto' })` define governed actions.
-   - `AutonomousRuntime` runs with `simulation: true` (HazelJS's built-in hard barrier against live side effects), pauses at `waiting_for_human` (`approval_pending`), resumes via `runtime.resume(runId, { approved, actor })`, and records every step in `MemoryAutonomousRunStore` (`runtime.listRuns()` and `runtime.timeline(runId)`).
+   - `@Capability({ id: 'email.draft_reply', effect: 'irreversible', approval: 'required' })` and `@Capability({ id: 'email.flag_for_review', effect: 'idempotent', approval: 'required' })` define governed actions (both pause for human approval; the flag capability is the safe fallback for blocked emails).
+   - `AutonomousRuntime` runs with `simulation: true` (HazelJS's built-in hard barrier against live side effects), pauses at `waiting_for_human` (`approval_pending`), resumes via `runtime.resume(runId, { approved, actor })`, and keeps in-memory run history and timelines in `MemoryAutonomousRunStore` (`runtime.listRuns()` and `runtime.timeline(runId)`). This history is not persisted and is lost when the application restarts.
 
 ### AAR Workflow Diagram
 
@@ -136,7 +136,7 @@ npm ci
 | `npm run demo` | Run all 8 sample emails in non-interactive demo mode (static provider answers **APPROVE** automatically; no human review) |
 | `npm run demo:reject` | Run all 8 sample emails in non-interactive demo mode (static provider answers **REJECT** automatically; no human review) |
 | `npm run demo:autonomous` | Run the **HazelJS Autonomous Application Runtime (AAR)** demo (approval, rejection, policy-gate block, and run history/timeline) |
-| `npm test` | Execute the automated test suite (127 tests across 6 files) |
+| `npm test` | Execute the automated test suite (129 tests across 6 files) |
 | `npm run typecheck` | Perform strict TypeScript type checking (`tsc --noEmit`) |
 | `npm run build` | Compile the TypeScript project to JavaScript in the `dist/` folder |
 

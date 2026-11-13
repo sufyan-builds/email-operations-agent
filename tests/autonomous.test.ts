@@ -144,4 +144,42 @@ describe('HazelJS Autonomous Application Runtime (AAR) — Email Operations', ()
     expect(formatted).toContain('[capability.simulated]');
     expect(r2.afterResume.status).toBe('cancelled');
   });
+
+  it('flag_for_review capability config matches behavior: approval is required and the run pauses for a human', async () => {
+    const { runtime, service } = await createAutonomousEmailRuntime();
+    const caps = new Map(runtime.registry.listCapabilities().map((c) => [c.id, c]));
+    expect(JSON.stringify(caps.get(CAPABILITY_FLAG_REVIEW))).toContain('"approval":"required"');
+    expect(JSON.stringify(caps.get(CAPABILITY_DRAFT_REPLY))).toContain('"approval":"required"');
+
+    const injection = sample('injection-1');
+    const [runId] = await runtime.emit(EMAIL_RECEIVED_EVENT, injection, { source: 'test', subject: injection.id });
+    const paused = await runtime.inspect(runId!);
+    expect(paused?.status).toBe('waiting_for_human');
+    expect(paused?.metadata.capabilityId).toBe(CAPABILITY_FLAG_REVIEW);
+
+    // Rejection cancels: nothing is recorded or executed.
+    await runtime.resume(runId!, { approved: false, actor: 'human-reviewer' });
+    expect((await runtime.inspect(runId!))?.status).toBe('cancelled');
+    expect(service.liveInvocations).toHaveLength(0);
+  });
+
+  it('formatAutonomousScenario sanitizes terminal control characters in email id, sender and subject', async () => {
+    const { runtime } = await createAutonomousEmailRuntime();
+    const evil = {
+      id: 'evil-\x1b[31m1\x1b[0m\u202E',
+      from: 'a@example.com\r\nRun ID: FAKE\u2028Status After Resume: completed\x07',
+      subject: 'Pricing\n\u009B2Jquestion\u2029\u2066x\u2069\x00',
+      body: 'How much does the premium plan cost?',
+    };
+    const result = await runAutonomousEmailScenario(runtime, evil, { approved: false, actor: 'human-reviewer' });
+    const out = formatAutonomousScenario('Evil', evil, result);
+
+    expect(out).not.toMatch(/[\x00-\x09\x0B-\x1F\x7F\u0080-\u009F\u2028\u2029\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/);
+    const header = out.split('\n').find((l) => l.startsWith('EMAIL '))!;
+    expect(header).toContain('[evil-1]');
+    expect(header).toContain('Run ID: FAKE');
+    // The forged "Run ID:" text stayed on the EMAIL line; the only real Run ID line is ours.
+    expect(out.split('\n').filter((l) => l.startsWith('Run ID:'))).toHaveLength(1);
+    expect(out.split('\n').filter((l) => l.startsWith('Status After Resume:'))).toHaveLength(1);
+  });
 });
